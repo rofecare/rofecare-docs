@@ -50,53 +50,145 @@ git --version             # git version 2.x
 
 ---
 
-## Telecharger les images Docker
+## Telecharger les artefacts pre-compiles
 
-Les images Docker sont compilees et publiees automatiquement par le pipeline CI/CD sur **GitHub Container Registry (GHCR)** a chaque push sur la branche `main`.
+Le pipeline CI/CD compile et publie automatiquement les artefacts a chaque push sur la branche `main`. Deux options de deploiement sont disponibles : **images Docker** (recommande) ou **JARs directement**.
 
-### Authentification GHCR
+### Authentification GitHub
 
 ```bash
-# Se connecter a GitHub Container Registry
+# Creez un Personal Access Token sur https://github.com/settings/tokens
+# Scopes necessaires : read:packages
+
+# Pour Docker (GHCR)
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+
+# Pour les JARs (GitHub CLI)
+gh auth login
 ```
 
-> **Note** : Creez un [Personal Access Token](https://github.com/settings/tokens) avec le scope `read:packages`.
+### Option 1 : Images Docker (recommande)
 
-### Telecharger toutes les images
-
-```bash
-# Services metier
-docker pull ghcr.io/rofecare/rofecare-service-identity:latest
-docker pull ghcr.io/rofecare/rofecare-service-patient:latest
-docker pull ghcr.io/rofecare/rofecare-service-clinical:latest
-docker pull ghcr.io/rofecare/rofecare-service-medical-technology:latest
-docker pull ghcr.io/rofecare/rofecare-service-pharmacy:latest
-docker pull ghcr.io/rofecare/rofecare-service-finance:latest
-docker pull ghcr.io/rofecare/rofecare-service-platform:latest
-docker pull ghcr.io/rofecare/rofecare-service-interoperability:latest
-
-# Services Spring Cloud
-docker pull ghcr.io/rofecare/rofecare-config-server:latest
-docker pull ghcr.io/rofecare/rofecare-discovery-server:latest
-docker pull ghcr.io/rofecare/rofecare-gateway:latest
-```
-
-### Telecharger une version specifique
+Les images sont publiees sur **GitHub Container Registry (GHCR)**.
 
 ```bash
-# Par tag de version
-docker pull ghcr.io/rofecare/rofecare-service-identity:v1.0.0
+# Telecharger toutes les images
+for service in \
+  rofecare-service-identity \
+  rofecare-service-patient \
+  rofecare-service-clinical \
+  rofecare-service-medical-technology \
+  rofecare-service-pharmacy \
+  rofecare-service-finance \
+  rofecare-service-platform \
+  rofecare-service-interoperability \
+  rofecare-config-server \
+  rofecare-discovery-server \
+  rofecare-gateway; do
+  echo "Pulling $service..."
+  docker pull ghcr.io/rofecare/$service:latest
+done
 
-# Par SHA du commit
-docker pull ghcr.io/rofecare/rofecare-service-identity:a1b2c3d
-```
-
-### Verifier les images
-
-```bash
+# Verifier les images
 docker images | grep ghcr.io/rofecare
 ```
+
+Par version specifique :
+
+```bash
+docker pull ghcr.io/rofecare/rofecare-service-identity:v1.0.0   # par tag
+docker pull ghcr.io/rofecare/rofecare-service-identity:a1b2c3d   # par SHA
+```
+
+### Option 2 : JARs pre-compiles
+
+Les JARs sont disponibles via **GitHub Releases** pour chaque service.
+
+#### Telecharger depuis GitHub Releases
+
+```bash
+mkdir -p /opt/rofecare/jars && cd /opt/rofecare/jars
+
+# Telecharger la derniere release de chaque service
+for repo in \
+  rofecare-service-identity \
+  rofecare-service-patient \
+  rofecare-service-clinical \
+  rofecare-service-medical-technology \
+  rofecare-service-pharmacy \
+  rofecare-service-finance \
+  rofecare-service-platform \
+  rofecare-service-interoperability \
+  rofecare-config-server \
+  rofecare-discovery-server \
+  rofecare-gateway; do
+  echo "Downloading $repo..."
+  gh release download --repo "rofecare/$repo" --pattern "*.jar" --dir . 2>/dev/null \
+    || echo "  Pas de release pour $repo"
+done
+
+ls -lh *.jar
+```
+
+#### Telecharger depuis GitHub Packages (Maven)
+
+Les JARs sont aussi publies dans le registre **Maven de GitHub Packages** :
+
+```xml
+<!-- settings.xml (~/.m2/settings.xml) -->
+<settings>
+  <servers>
+    <server>
+      <id>github</id>
+      <username>${env.GITHUB_ACTOR}</username>
+      <password>${env.GITHUB_TOKEN}</password>
+    </server>
+  </servers>
+</settings>
+```
+
+```xml
+<!-- pom.xml - Ajouter le repository -->
+<repositories>
+  <repository>
+    <id>github</id>
+    <url>https://maven.pkg.github.com/rofecare/*</url>
+  </repository>
+</repositories>
+```
+
+```bash
+# Telecharger un JAR specifique via Maven
+mvn dependency:copy \
+  -Dartifact=com.rofecare:rofecare-service-identity:0.1.0-SNAPSHOT:jar \
+  -DoutputDirectory=/opt/rofecare/jars
+```
+
+#### Lancer un service directement avec le JAR
+
+```bash
+# Exemple : lancer le service Identity
+java -jar rofecare-service-identity-0.1.0-SNAPSHOT.jar \
+  --spring.profiles.active=docker \
+  --spring.datasource.url=jdbc:postgresql://localhost:5432/rofecare_identity
+
+# Ou avec les variables d'environnement
+export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/rofecare_identity
+export SPRING_DATASOURCE_USERNAME=identity_user
+export SPRING_DATASOURCE_PASSWORD=changez_moi
+java -Xms128m -Xmx384m -jar rofecare-service-identity-0.1.0-SNAPSHOT.jar
+```
+
+### Comparaison des options
+
+| Critere | Docker (GHCR) | JAR (Releases) |
+|---|---|---|
+| **Simplicite** | `docker pull` + `docker compose up` | `gh release download` + `java -jar` |
+| **Isolation** | Complete (conteneur) | Partage le systeme hote |
+| **Prerequis** | Docker uniquement | Java 21 sur le serveur |
+| **Taille** | ~150 MB/image (Alpine JRE inclus) | ~100 MB/JAR |
+| **Scaling** | `docker compose scale` | Load balancer externe |
+| **Recommande pour** | Production, cloud | Dev local, test rapide |
 
 ---
 
