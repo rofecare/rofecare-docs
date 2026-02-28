@@ -7,9 +7,8 @@ Guide de deploiement de Rofecare HIS en architecture microservices, concu pour l
 ## Table des matieres
 
 - [Prerequisites](#prerequisites)
-- [Cloner les repositories](#cloner-les-repositories)
+- [Telecharger les images Docker](#telecharger-les-images-docker)
 - [Configuration de l'environnement](#configuration-de-lenvironnement)
-- [Compilation des services](#compilation-des-services)
 - [Demarrage avec Docker Compose (3 phases)](#demarrage-avec-docker-compose-3-phases)
 - [Scripts de demarrage](#scripts-de-demarrage)
 - [Verification du deploiement](#verification-du-deploiement)
@@ -38,8 +37,8 @@ Guide de deploiement de Rofecare HIS en architecture microservices, concu pour l
 | Docker Engine   | 24.x            |
 | Docker Compose  | 2.20+            |
 | Git             | 2.x              |
-| Java 21 (build) | Eclipse Temurin 21 |
-| Maven           | 3.9+             |
+
+> **Note** : Java et Maven ne sont pas necessaires pour le deploiement. Les images Docker pre-compilees sont telecharges directement depuis GitHub Container Registry (GHCR).
 
 ### Verification
 
@@ -47,33 +46,67 @@ Guide de deploiement de Rofecare HIS en architecture microservices, concu pour l
 docker --version          # Docker version 24.x+
 docker compose version    # Docker Compose version v2.20+
 git --version             # git version 2.x
-java -version             # openjdk version "21.x.x"
-mvn -version              # Apache Maven 3.9.x
 ```
 
 ---
 
-## Cloner les repositories
+## Telecharger les images Docker
+
+Les images Docker sont compilees et publiees automatiquement par le pipeline CI/CD sur **GitHub Container Registry (GHCR)** a chaque push sur la branche `main`.
+
+### Authentification GHCR
 
 ```bash
-# Creer le repertoire de travail
-mkdir -p /opt/rofecare && cd /opt/rofecare
+# Se connecter a GitHub Container Registry
+echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+```
 
-# Cloner le backend principal
-git clone https://github.com/rofecare/rofecare-server.git
+> **Note** : Creez un [Personal Access Token](https://github.com/settings/tokens) avec le scope `read:packages`.
 
-# Cloner le frontend (optionnel, si deploiement integre)
-git clone https://github.com/rofecare/rofecare-frontend.git
+### Telecharger toutes les images
+
+```bash
+# Services metier
+docker pull ghcr.io/rofecare/rofecare-service-identity:latest
+docker pull ghcr.io/rofecare/rofecare-service-patient:latest
+docker pull ghcr.io/rofecare/rofecare-service-clinical:latest
+docker pull ghcr.io/rofecare/rofecare-service-medical-technology:latest
+docker pull ghcr.io/rofecare/rofecare-service-pharmacy:latest
+docker pull ghcr.io/rofecare/rofecare-service-finance:latest
+docker pull ghcr.io/rofecare/rofecare-service-platform:latest
+docker pull ghcr.io/rofecare/rofecare-service-interoperability:latest
+
+# Services Spring Cloud
+docker pull ghcr.io/rofecare/rofecare-config-server:latest
+docker pull ghcr.io/rofecare/rofecare-discovery-server:latest
+docker pull ghcr.io/rofecare/rofecare-gateway:latest
+```
+
+### Telecharger une version specifique
+
+```bash
+# Par tag de version
+docker pull ghcr.io/rofecare/rofecare-service-identity:v1.0.0
+
+# Par SHA du commit
+docker pull ghcr.io/rofecare/rofecare-service-identity:a1b2c3d
+```
+
+### Verifier les images
+
+```bash
+docker images | grep ghcr.io/rofecare
 ```
 
 ---
 
 ## Configuration de l'environnement
 
-Creez un fichier `.env` a la racine du projet `rofecare-server` :
-
 ```bash
-cd /opt/rofecare/rofecare-server
+# Cloner uniquement l'infrastructure (docker-compose + scripts)
+mkdir -p /opt/rofecare && cd /opt/rofecare
+git clone https://github.com/rofecare/rofecare-infrastructure.git
+cd rofecare-infrastructure/docker
 cp .env.example .env
 ```
 
@@ -188,45 +221,6 @@ ZIPKIN_PORT=9411
 
 ---
 
-## Compilation des services
-
-### Etape 1 : Compiler `rofecare-common`
-
-Le module commun doit etre compile et installe dans le repository Maven local en premier :
-
-```bash
-cd /opt/rofecare/rofecare-server/rofecare-common
-mvn clean install -DskipTests
-```
-
-### Etape 2 : Compiler tous les services
-
-```bash
-cd /opt/rofecare/rofecare-server
-
-# Compiler tous les modules
-mvn clean package -DskipTests
-
-# Ou compiler service par service
-for service in rofecare-identity-service rofecare-patient-service \
-               rofecare-clinical-service rofecare-medical-technology-service \
-               rofecare-pharmacy-service rofecare-finance-service \
-               rofecare-platform-service rofecare-interoperability-service; do
-  echo "Building $service..."
-  cd /opt/rofecare/rofecare-server/$service
-  mvn clean package -DskipTests
-done
-```
-
-### Etape 3 : Construire les images Docker
-
-```bash
-cd /opt/rofecare/rofecare-server
-docker compose build
-```
-
----
-
 ## Demarrage avec Docker Compose (3 phases)
 
 Le demarrage se fait en 3 phases distinctes pour respecter les dependances entre les services.
@@ -236,7 +230,7 @@ Le demarrage se fait en 3 phases distinctes pour respecter les dependances entre
 Demarrez les services d'infrastructure (bases de donnees, cache, messagerie) :
 
 ```bash
-cd /opt/rofecare/rofecare-server
+cd /opt/rofecare/rofecare-infrastructure/docker
 
 # Demarrer l'infrastructure
 docker compose up -d \
@@ -334,7 +328,7 @@ docker compose ps
 # start-all.sh - Demarre l'ensemble de la plateforme Rofecare
 set -e
 
-COMPOSE_DIR="/opt/rofecare/rofecare-server"
+COMPOSE_DIR="/opt/rofecare/rofecare-infrastructure/docker"
 cd "$COMPOSE_DIR"
 
 echo "=== Phase 1 : Infrastructure ==="
@@ -383,7 +377,7 @@ echo "Kafka UI         : http://localhost:9000"
 # start-infra.sh - Demarre uniquement l'infrastructure
 set -e
 
-COMPOSE_DIR="/opt/rofecare/rofecare-server"
+COMPOSE_DIR="/opt/rofecare/rofecare-infrastructure/docker"
 cd "$COMPOSE_DIR"
 
 echo "Demarrage de l'infrastructure..."
