@@ -579,7 +579,7 @@ networks:
 
 ## docker-compose.prod.yml (production overlay)
 
-Voir [production.md](./production.md) pour le contenu detaille de ce fichier. En resume, il ajoute :
+Voir [server-install.md](./server-install.md#ressources-et-optimisation) pour le contenu detaille de ce fichier. En resume, il ajoute :
 
 - `restart: always` sur tous les services
 - Limites de ressources CPU et memoire (`deploy.resources`)

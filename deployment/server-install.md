@@ -9,12 +9,16 @@ Guide de deploiement de Rofecare HIS en architecture microservices sur un **serv
 - [Prerequisites](#prerequisites)
 - [Telecharger les images Docker](#telecharger-les-images-docker)
 - [Configuration de l'environnement](#configuration-de-lenvironnement)
-
-- [Demarrage avec Docker Compose (3 phases)](#demarrage-avec-docker-compose-3-phases)
+- [Demarrage avec Docker Compose (4 phases)](#demarrage-avec-docker-compose-4-phases)
 - [Scripts de demarrage](#scripts-de-demarrage)
 - [Verification du deploiement](#verification-du-deploiement)
+- [Securisation](#securisation)
+- [Ressources et optimisation](#ressources-et-optimisation)
+- [Monitoring et observabilite](#monitoring-et-observabilite)
+- [Sauvegardes](#sauvegardes)
+- [Haute disponibilite et scaling](#haute-disponibilite-et-scaling)
+- [Gestion des logs](#gestion-des-logs)
 - [Reference des ports](#reference-des-ports)
-- [Mise a l'echelle des services](#mise-a-lechelle-des-services)
 
 ---
 
@@ -29,7 +33,7 @@ Guide de deploiement de Rofecare HIS en architecture microservices sur un **serv
 | Disque    | 200 GB SSD                 | 50 GB SSD             |
 | Reseau    | 100 Mbps                   | 100 Mbps              |
 
-> **Profil optimise** : En utilisant un PostgreSQL manage (DigitalOcean, Supabase, Neon) et Kafka KRaft (sans Zookeeper), la RAM necessaire passe de ~22 GB a **~8 GB**. Voir [production.md](../deployment/production.md#profils-de-deploiement) pour les details.
+> **Profil optimise** : En utilisant un PostgreSQL manage (DigitalOcean, Supabase, Neon) et Kafka KRaft (sans Zookeeper), la RAM necessaire passe de ~22 GB a **~8 GB**. Voir [Ressources et optimisation](#ressources-et-optimisation) pour les details.
 
 ### Logiciels
 
@@ -530,43 +534,616 @@ curl https://api.rofecare.com/api/clinical/actuator/health
 
 ---
 
-## Mise a l'echelle des services
+## Securisation
 
-### Augmenter le nombre d'instances
+### Generer des mots de passe securises
 
-Docker Compose permet de scaler horizontalement les services metier :
+> **Critique** : ne jamais utiliser les mots de passe par defaut en production.
 
 ```bash
-# Scaler un service specifique
-docker compose up -d --scale patient-service=3
-docker compose up -d --scale clinical-service=2
+openssl rand -base64 32  # Pour chaque base de donnees
+openssl rand -base64 64  # Pour le JWT secret
+openssl rand -base64 32  # Pour Redis
+```
+
+Mettez a jour toutes les variables dans le fichier `.env` :
+
+```env
+IDENTITY_DB_PASSWORD=<mot_de_passe_genere_1>
+PATIENT_DB_PASSWORD=<mot_de_passe_genere_2>
+CLINICAL_DB_PASSWORD=<mot_de_passe_genere_3>
+# ... pour chaque service
+
+REDIS_PASSWORD=<mot_de_passe_genere_redis>
+JWT_SECRET=<cle_jwt_generee_64_caracteres>
+CONFIG_ENCRYPT_KEY=<cle_chiffrement_config>
+GRAFANA_ADMIN_PASSWORD=<mot_de_passe_grafana>
+```
+
+### Configuration JWT production
+
+```yaml
+# application-production.yml
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: 3600000        # 1 heure
+    refresh-expiration: 86400000  # 24 heures
+    issuer: rofecare-production
+    audience: rofecare-api
+```
+
+### Caddy — Reverse proxy et TLS automatique
+
+Caddy gere automatiquement les certificats TLS via Let's Encrypt (HTTPS, renouvellement, HTTP/3).
+
+```caddyfile
+# /etc/caddy/Caddyfile
+
+# API Gateway
+api.rofecare.com {
+    reverse_proxy localhost:8080
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        X-XSS-Protection "1; mode=block"
+    }
+}
+
+# Application frontend
+app.rofecare.com {
+    reverse_proxy localhost:3000
+}
+
+# ============================================================
+# Infrastructure & Monitoring (protege par basicauth)
+# ============================================================
+# Generer le hash : caddy hash-password --plaintext 'VotreMotDePasse'
+
+(infra_auth) {
+    basicauth {
+        {$CADDY_ADMIN_USER:admin} {$CADDY_ADMIN_PASSWORD_HASH}
+    }
+}
+
+grafana.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:3001
+}
+
+kibana.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:5601
+}
+
+eureka.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:8761
+}
+
+zipkin.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:9411
+}
+
+kafka-ui.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:8180
+}
+
+prometheus.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:9090
+}
+
+config.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:8888
+}
+```
+
+#### Configurer l'authentification infrastructure
+
+```bash
+# Generer le hash bcrypt
+caddy hash-password --plaintext 'VotreMotDePasseSecurise'
+
+# Ajouter dans .env
+CADDY_ADMIN_USER=admin
+CADDY_ADMIN_PASSWORD_HASH=$2a$14$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+#### Docker Compose pour Caddy
+
+```yaml
+caddy:
+  image: caddy:2-alpine
+  restart: unless-stopped
+  ports:
+    - "80:80"
+    - "443:443"
+    - "443:443/udp"  # HTTP/3
+  volumes:
+    - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    - caddy_data:/data
+    - caddy_config:/config
+  networks:
+    - frontend
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+### Securite reseau Docker
+
+```yaml
+# docker-compose.prod.yml - Reseaux isoles
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true  # Pas d'acces Internet
+  database:
+    driver: bridge
+    internal: true
+```
+
+### Docker Compose production overlay
+
+```bash
+# Demarrage en mode production
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+```yaml
+# docker-compose.prod.yml (extrait)
+services:
+  identity-db:
+    restart: always
+    ports: []  # Ne pas exposer les ports DB en production
+
+  redis:
+    restart: always
+    ports: []
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
+```
+
+---
+
+## Ressources et optimisation
+
+### Limites par type de service
+
+| Type de service          | CPU | RAM (limite) | RAM (reserve) |
+| ------------------------ | --- | ------------ | ------------- |
+| Spring Cloud (Config, Discovery) | 0.5 | 512 MB  | 256 MB        |
+| API Gateway              | 1.0 | 768 MB       | 384 MB        |
+| Services metier          | 1.0 | 512 MB       | 256 MB        |
+| Clinical Service         | 1.0 | 768 MB       | 384 MB        |
+| Redis                    | 0.5 | 256 MB       | 128 MB        |
+| Kafka KRaft              | 1.0 | 1 GB         | 512 MB        |
+
+### JVM tuning
+
+```yaml
+environment:
+  JAVA_OPTS: "-Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication"
+```
+
+### Profil complet — auto-heberge (~22 GB)
+
+| Composants                      | RAM estimee |
+| ------------------------------- | ----------- |
+| 8 bases PostgreSQL              | ~6 GB       |
+| 8 services metier               | ~9 GB       |
+| 3 services Spring Cloud         | ~2 GB       |
+| Redis + Kafka + Zookeeper       | ~3 GB       |
+| Monitoring                      | ~2 GB       |
+| **Total**                       | **~22 GB**  |
+
+### Profil optimise — DB managee (~8 GB, recommande)
+
+| Composants                             | RAM estimee |
+| -------------------------------------- | ----------- |
+| PostgreSQL manage (distant)            | **0 GB**    |
+| 8 services metier (JVM optimisee)      | ~4 GB       |
+| 3 services Spring Cloud               | ~1.5 GB     |
+| Redis                                  | ~256 MB     |
+| Kafka KRaft (sans Zookeeper)           | ~1 GB       |
+| Monitoring leger                       | ~1 GB       |
+| Caddy                                  | ~50 MB      |
+| **Total**                              | **~8 GB**   |
+
+### Configuration DB managee (DigitalOcean)
+
+```env
+DB_HOST=db-postgresql-rofecare-do-user-xxxxx.ondigitalocean.com
+DB_PORT=25060
+DB_SSL_MODE=require
+
+IDENTITY_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_identity?sslmode=require
+PATIENT_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_patient?sslmode=require
+CLINICAL_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_clinical?sslmode=require
+MEDTECH_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_medical_technology?sslmode=require
+PHARMACY_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_pharmacy?sslmode=require
+FINANCE_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_finance?sslmode=require
+PLATFORM_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_platform?sslmode=require
+INTEROP_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_interoperability?sslmode=require
+```
+
+### Kafka KRaft (sans Zookeeper)
+
+```yaml
+kafka:
+  image: confluentinc/cp-kafka:7.6.0
+  environment:
+    KAFKA_NODE_ID: 1
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    CLUSTER_ID: "rofecare-kafka-cluster-001"
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+```
+
+### Providers PostgreSQL manage
+
+| Provider | Plan | Prix | Avantages |
+|---|---|---|---|
+| **DigitalOcean** | Managed DB Basic | ~15 $/mois | Simple, backups auto |
+| **Supabase** | Pro | ~25 $/mois | Postgres + API REST |
+| **Neon** | Scale | ~19 $/mois | Serverless, scale-to-zero |
+| **AWS RDS** | db.t4g.micro | ~15 $/mois | Multi-AZ disponible |
+
+### PostgreSQL tuning
+
+```sql
+ALTER SYSTEM SET shared_buffers = '256MB';
+ALTER SYSTEM SET effective_cache_size = '768MB';
+ALTER SYSTEM SET work_mem = '16MB';
+ALTER SYSTEM SET maintenance_work_mem = '128MB';
+ALTER SYSTEM SET max_connections = 100;
+SELECT pg_reload_conf();
+```
+
+### Connection pooling (HikariCP)
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      connection-timeout: 30000
+```
+
+---
+
+## Monitoring et observabilite
+
+### Demarrer le stack monitoring
+
+```bash
+docker compose -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.monitoring.yml up -d
+```
+
+### Prometheus
+
+Fichier `prometheus/prometheus.yml` :
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "spring-boot-services"
+    metrics_path: /actuator/prometheus
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+          - gateway:8080
+          - identity-service:8081
+          - patient-service:8082
+          - clinical-service:8083
+          - medical-technology-service:8084
+          - pharmacy-service:8085
+          - finance-service:8086
+          - platform-service:8087
+          - interoperability-service:8088
+
+  - job_name: "postgresql"
+    static_configs:
+      - targets: [postgres-exporter:9187]
+
+  - job_name: "redis"
+    static_configs:
+      - targets: [redis-exporter:9121]
+
+  - job_name: "kafka"
+    static_configs:
+      - targets: [kafka-exporter:9308]
+```
+
+### Alertes Prometheus
+
+```yaml
+# prometheus/alert-rules.yml
+groups:
+  - name: rofecare-alerts
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} indisponible"
+
+      - alert: HighMemoryUsage
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: hikaricp_connections_active / hikaricp_connections_max > 0.9
+        for: 2m
+        labels:
+          severity: critical
+```
+
+### Grafana
+
+Accedez a `https://grafana.rofecare.com` (utilisateur : `admin`).
+
+| Dashboard | ID Grafana | Description |
+|---|---|---|
+| Spring Boot Statistics | 12464 | Metriques JVM et Spring Boot |
+| PostgreSQL Database | 9628 | Surveillance PostgreSQL |
+| Redis Dashboard | 11835 | Metriques Redis |
+| Kafka Overview | 7589 | Supervision Kafka |
+| Docker Containers | 893 | Ressources conteneurs |
+
+### ELK (Elasticsearch + Kibana)
+
+```yaml
+# docker-compose.monitoring.yml (extrait)
+elasticsearch:
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+  environment:
+    - discovery.type=single-node
+    - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+  volumes:
+    - elasticsearch-data:/usr/share/elasticsearch/data
+
+kibana:
+  image: docker.elastic.co/kibana/kibana:8.12.0
+  environment:
+    - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  depends_on:
+    - elasticsearch
+```
+
+### Zipkin (tracing distribue)
+
+Accedez a `https://zipkin.rofecare.com`.
+
+```yaml
+# application-production.yml
+management:
+  tracing:
+    sampling:
+      probability: 0.1  # 10% des requetes en production
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
+```
+
+### Endpoints Actuator
+
+| Endpoint | Description |
+|---|---|
+| `/actuator/health` | Etat de sante global |
+| `/actuator/health/liveness` | Sonde de vivacite (Kubernetes) |
+| `/actuator/health/readiness` | Sonde de disponibilite |
+| `/actuator/metrics` | Metriques Micrometer |
+| `/actuator/prometheus` | Metriques format Prometheus |
+
+### Script de monitoring
+
+```bash
+#!/bin/bash
+# health-check.sh
+SERVICES=(
+  "API Gateway:https://api.rofecare.com/actuator/health"
+  "Identity:https://api.rofecare.com/api/identity/actuator/health"
+  "Patient:https://api.rofecare.com/api/patients/actuator/health"
+  "Clinical:https://api.rofecare.com/api/clinical/actuator/health"
+  "Med Tech:https://api.rofecare.com/api/medical-technology/actuator/health"
+  "Pharmacy:https://api.rofecare.com/api/pharmacy/actuator/health"
+  "Finance:https://api.rofecare.com/api/finance/actuator/health"
+  "Platform:https://api.rofecare.com/api/platform/actuator/health"
+  "Interop:https://api.rofecare.com/api/interoperability/actuator/health"
+  "Eureka:https://eureka.rofecare.com/actuator/health"
+  "Grafana:https://grafana.rofecare.com/api/health"
+)
+
+echo "=== Rofecare Health Check - $(date) ==="
+ALL_OK=true
+
+for entry in "${SERVICES[@]}"; do
+  url="${entry#*:}"
+  name="${entry%%:*}"
+  response=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 5 2>/dev/null)
+
+  if [ "$response" = "200" ]; then
+    echo "[UP]   $name"
+  else
+    echo "[DOWN] $name (HTTP $response)"
+    ALL_OK=false
+  fi
+done
+
+if [ "$ALL_OK" = false ]; then
+  echo ""
+  echo "ALERTE : un ou plusieurs services sont indisponibles."
+  exit 1
+fi
+
+echo "Tous les services sont operationnels."
+```
+
+---
+
+## Sauvegardes
+
+### Script de sauvegarde quotidienne
+
+```bash
+#!/bin/bash
+# backup-databases.sh
+set -e
+
+BACKUP_DIR="/opt/rofecare/backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+RETENTION_DAYS=30
+
+mkdir -p "$BACKUP_DIR"
+
+databases=(
+  "identity-db:identity_db:identity_user"
+  "patient-db:patient_db:patient_user"
+  "clinical-db:clinical_db:clinical_user"
+  "medtech-db:medtech_db:medtech_user"
+  "pharmacy-db:pharmacy_db:pharmacy_user"
+  "finance-db:finance_db:finance_user"
+  "platform-db:platform_db:platform_user"
+  "interop-db:interop_db:interop_user"
+)
+
+echo "=== Sauvegarde Rofecare - $DATE ==="
+
+for entry in "${databases[@]}"; do
+  IFS=":" read -r container dbname dbuser <<< "$entry"
+  BACKUP_FILE="$BACKUP_DIR/${dbname}_${DATE}.sql.gz"
+
+  echo "Sauvegarde de $dbname..."
+  docker exec "$container" pg_dump -U "$dbuser" "$dbname" | gzip > "$BACKUP_FILE"
+
+  SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+  echo "  OK - $BACKUP_FILE ($SIZE)"
+done
+
+echo "Nettoyage des sauvegardes de plus de $RETENTION_DAYS jours..."
+find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$RETENTION_DAYS -delete
+
+echo "=== Sauvegarde terminee ==="
+```
+
+### Planification cron
+
+```bash
+# Sauvegarde quotidienne a 2h du matin
+echo "0 2 * * * /opt/rofecare/scripts/backup-databases.sh >> /var/log/rofecare/backup.log 2>&1" | crontab -
+```
+
+### Restauration
+
+```bash
+gunzip -c /opt/rofecare/backups/patient_db_20260228_020000.sql.gz | \
+  docker exec -i patient-db psql -U patient_user patient_db
+```
+
+---
+
+## Haute disponibilite et scaling
+
+### Scaling horizontal
+
+```bash
+# Scaler les services critiques
+docker compose up -d --scale patient-service=3 --scale clinical-service=2
 
 # Verifier les instances
 docker compose ps patient-service
 ```
 
-### Considerations pour le scaling
+Eureka et Spring Cloud LoadBalancer gerent automatiquement la decouverte et la repartition de charge.
 
-- **Eureka** : les instances supplementaires s'enregistrent automatiquement
-- **Gateway** : le load balancing est gere par Spring Cloud LoadBalancer
-- **Kafka** : chaque instance rejoint le consumer group automatiquement
-- **Base de donnees** : partagee entre les instances d'un meme service (attention aux connexions)
+### Recommandations HA
 
-### Limiter les ressources par service
-
-```bash
-# Voir l'utilisation des ressources
-docker stats --no-stream
-
-# Les limites sont definies dans docker-compose.yml via deploy.resources
-```
+| Composant | Strategie |
+|---|---|
+| PostgreSQL | Streaming replication + Patroni |
+| Redis | Redis Sentinel ou Redis Cluster |
+| Kafka | Cluster multi-broker (min. 3) |
+| Services metier | Instances multiples via Gateway |
+| Load Balancer | Caddy (reverse proxy + TLS auto) |
 
 ### Arreter la plateforme
 
 ```bash
-# Arret gracieux de tous les services
+# Arret gracieux
 docker compose down
 
 # Arret avec suppression des volumes (ATTENTION : perte de donnees)
 docker compose down -v
+```
+
+---
+
+## Gestion des logs
+
+### Configuration logback production
+
+```xml
+<!-- logback-spring.xml -->
+<configuration>
+    <springProfile name="production">
+        <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>/var/log/rofecare/${spring.application.name}.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>/var/log/rofecare/${spring.application.name}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>5GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        </appender>
+
+        <root level="WARN">
+            <appender-ref ref="JSON_FILE"/>
+        </root>
+        <logger name="com.rofecare" level="INFO"/>
+    </springProfile>
+</configuration>
+```
+
+### Rotation et retention
+
+| Parametre | Valeur | Description |
+|---|---|---|
+| Taille max | 100 MB | Par fichier de log |
+| Historique | 30 jours | Conservation des archives |
+| Taille totale | 5 GB | Limite par service |
+| Format | JSON | Pour ingestion ELK |
+
+### Consulter les logs Docker
+
+```bash
+docker compose logs -f patient-service --tail 100   # Un service
+docker compose logs -f --tail 50                      # Tous les services
+docker compose logs --no-color > rofecare-logs-$(date +%Y%m%d).txt  # Exporter
 ```

@@ -64,7 +64,7 @@ Tous les sous-domaines d'infrastructure sont proteges par **basic auth** (login/
 | `kafka-ui.rofecare.com` | Kafka UI (8180) | basicauth | Visualisation des topics Kafka |
 | `prometheus.rofecare.com` | Prometheus (9090) | basicauth | Collecte et stockage des metriques |
 
-> **Securite** : En production, ces sous-domaines devraient etre accessibles uniquement via VPN en complement du basic auth. Voir [production.md](../deployment/production.md) pour la configuration Caddy.
+> **Securite** : En production, ces sous-domaines devraient etre accessibles uniquement via VPN en complement du basic auth. Voir [server-install.md](../deployment/server-install.md#securisation) pour la configuration Caddy.
 
 ### Interoperabilite
 
