@@ -1,6 +1,6 @@
 # Installation serveur (microservices)
 
-Guide de deploiement de Rofecare HIS en architecture microservices, concu pour les environnements serveur avec Docker et Docker Compose.
+Guide de deploiement de Rofecare HIS en architecture microservices sur un **serveur distant** (VPS, cloud, machine dediee). Pour l'installation locale sur un ordinateur de bureau ou portable, voir [local-install.md](local-install.md).
 
 ---
 
@@ -9,6 +9,7 @@ Guide de deploiement de Rofecare HIS en architecture microservices, concu pour l
 - [Prerequisites](#prerequisites)
 - [Telecharger les images Docker](#telecharger-les-images-docker)
 - [Configuration de l'environnement](#configuration-de-lenvironnement)
+
 - [Demarrage avec Docker Compose (3 phases)](#demarrage-avec-docker-compose-3-phases)
 - [Scripts de demarrage](#scripts-de-demarrage)
 - [Verification du deploiement](#verification-du-deploiement)
@@ -50,29 +51,21 @@ git --version             # git version 2.x
 
 ---
 
-## Telecharger les artefacts pre-compiles
+## Telecharger les images Docker
 
-Le pipeline CI/CD compile et publie automatiquement les artefacts a chaque push sur la branche `main`. Deux options de deploiement sont disponibles : **images Docker** (recommande) ou **JARs directement**.
+Les images Docker sont compilees et publiees automatiquement par le pipeline CI/CD a chaque push sur la branche `main`, sur **GitHub Container Registry (GHCR)**.
 
-### Authentification GitHub
+### Authentification GHCR
 
 ```bash
 # Creez un Personal Access Token sur https://github.com/settings/tokens
-# Scopes necessaires : read:packages
-
-# Pour Docker (GHCR)
+# Scope necessaire : read:packages
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# Pour les JARs (GitHub CLI)
-gh auth login
 ```
 
-### Option 1 : Images Docker (recommande)
-
-Les images sont publiees sur **GitHub Container Registry (GHCR)**.
+### Telecharger toutes les images
 
 ```bash
-# Telecharger toutes les images
 for service in \
   rofecare-service-identity \
   rofecare-service-patient \
@@ -88,107 +81,20 @@ for service in \
   echo "Pulling $service..."
   docker pull ghcr.io/rofecare/$service:latest
 done
+```
 
-# Verifier les images
+### Telecharger une version specifique
+
+```bash
+docker pull ghcr.io/rofecare/rofecare-service-identity:v1.0.0   # par tag de version
+docker pull ghcr.io/rofecare/rofecare-service-identity:a1b2c3d   # par SHA du commit
+```
+
+### Verifier les images
+
+```bash
 docker images | grep ghcr.io/rofecare
 ```
-
-Par version specifique :
-
-```bash
-docker pull ghcr.io/rofecare/rofecare-service-identity:v1.0.0   # par tag
-docker pull ghcr.io/rofecare/rofecare-service-identity:a1b2c3d   # par SHA
-```
-
-### Option 2 : JARs pre-compiles
-
-Les JARs sont disponibles via **GitHub Releases** pour chaque service.
-
-#### Telecharger depuis GitHub Releases
-
-```bash
-mkdir -p /opt/rofecare/jars && cd /opt/rofecare/jars
-
-# Telecharger la derniere release de chaque service
-for repo in \
-  rofecare-service-identity \
-  rofecare-service-patient \
-  rofecare-service-clinical \
-  rofecare-service-medical-technology \
-  rofecare-service-pharmacy \
-  rofecare-service-finance \
-  rofecare-service-platform \
-  rofecare-service-interoperability \
-  rofecare-config-server \
-  rofecare-discovery-server \
-  rofecare-gateway; do
-  echo "Downloading $repo..."
-  gh release download --repo "rofecare/$repo" --pattern "*.jar" --dir . 2>/dev/null \
-    || echo "  Pas de release pour $repo"
-done
-
-ls -lh *.jar
-```
-
-#### Telecharger depuis GitHub Packages (Maven)
-
-Les JARs sont aussi publies dans le registre **Maven de GitHub Packages** :
-
-```xml
-<!-- settings.xml (~/.m2/settings.xml) -->
-<settings>
-  <servers>
-    <server>
-      <id>github</id>
-      <username>${env.GITHUB_ACTOR}</username>
-      <password>${env.GITHUB_TOKEN}</password>
-    </server>
-  </servers>
-</settings>
-```
-
-```xml
-<!-- pom.xml - Ajouter le repository -->
-<repositories>
-  <repository>
-    <id>github</id>
-    <url>https://maven.pkg.github.com/rofecare/*</url>
-  </repository>
-</repositories>
-```
-
-```bash
-# Telecharger un JAR specifique via Maven
-mvn dependency:copy \
-  -Dartifact=com.rofecare:rofecare-service-identity:0.1.0-SNAPSHOT:jar \
-  -DoutputDirectory=/opt/rofecare/jars
-```
-
-#### Lancer un service directement avec le JAR
-
-```bash
-# Exemple : lancer le service Identity
-java -jar rofecare-service-identity-0.1.0-SNAPSHOT.jar \
-  --spring.profiles.active=docker \
-  --spring.datasource.url=jdbc:postgresql://localhost:5432/rofecare_identity
-
-# Ou avec les variables d'environnement
-export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/rofecare_identity
-export SPRING_DATASOURCE_USERNAME=identity_user
-export SPRING_DATASOURCE_PASSWORD=changez_moi
-java -Xms128m -Xmx384m -jar rofecare-service-identity-0.1.0-SNAPSHOT.jar
-```
-
-### Comparaison des options
-
-| Critere | Docker (GHCR) | JAR (Releases) |
-|---|---|---|
-| **Simplicite** | `docker pull` + `docker compose up` | `gh release download` + `java -jar` |
-| **Isolation** | Complete (conteneur) | Partage le systeme hote |
-| **Prerequis** | Docker uniquement | Java 21 sur le serveur |
-| **Taille** | ~150 MB/image (Alpine JRE inclus) | ~100 MB/JAR |
-| **Scaling** | `docker compose scale` | Load balancer externe |
-| **Recommande pour** | Production, cloud | Dev local, test rapide |
 
 ---
 
