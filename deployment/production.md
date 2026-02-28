@@ -239,51 +239,70 @@ app:
 
 ### Configuration TLS/HTTPS
 
-#### Option 1 : Reverse proxy Nginx (recommande)
+#### Reverse proxy Caddy (recommande)
 
-```nginx
-# /etc/nginx/conf.d/rofecare.conf
-server {
-    listen 443 ssl http2;
-    server_name rofecare.com;
+Caddy gere automatiquement les certificats TLS via Let's Encrypt (HTTPS automatique, renouvellement inclus).
 
-    ssl_certificate     /etc/letsencrypt/live/rofecare.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/rofecare.com/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
+```caddyfile
+# /etc/caddy/Caddyfile
 
-    # Headers de securite
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection "1; mode=block";
+# API Gateway
+api.rofecare.com {
+    reverse_proxy localhost:8080
 
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        X-XSS-Protection "1; mode=block"
     }
 }
 
-server {
-    listen 80;
-    server_name rofecare.com;
-    return 301 https://$server_name$request_uri;
+# Application frontend
+app.rofecare.com {
+    reverse_proxy localhost:3000
+}
+
+# Monitoring (acces restreint)
+grafana.rofecare.com {
+    reverse_proxy localhost:3001
+}
+
+kibana.rofecare.com {
+    reverse_proxy localhost:5601
+}
+
+eureka.rofecare.com {
+    reverse_proxy localhost:8761
+}
+
+zipkin.rofecare.com {
+    reverse_proxy localhost:9411
 }
 ```
 
-#### Option 2 : Certificat dans Spring Boot
+> **Note** : Caddy obtient et renouvelle automatiquement les certificats TLS. Aucune configuration SSL manuelle n'est necessaire. La redirection HTTP → HTTPS est egalement automatique.
+
+#### Docker Compose pour Caddy
 
 ```yaml
-server:
-  ssl:
-    enabled: true
-    key-store: classpath:keystore.p12
-    key-store-password: ${KEYSTORE_PASSWORD}
-    key-store-type: PKCS12
-    key-alias: rofecare
+caddy:
+  image: caddy:2-alpine
+  restart: unless-stopped
+  ports:
+    - "80:80"
+    - "443:443"
+    - "443:443/udp"  # HTTP/3
+  volumes:
+    - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    - caddy_data:/data
+    - caddy_config:/config
+  networks:
+    - frontend
+
+volumes:
+  caddy_data:
+  caddy_config:
 ```
 
 ### Securite reseau Docker
@@ -521,7 +540,7 @@ gunzip -c /opt/rofecare/backups/patient_db_20260228_020000.sql.gz | \
 | Kafka             | Cluster multi-broker (min. 3 brokers)         |
 | Services metier   | Instances multiples derriere le Gateway       |
 | API Gateway       | Instances multiples derriere un load balancer  |
-| Load Balancer     | Nginx ou HAProxy en amont                     |
+| Load Balancer     | Caddy en amont (reverse proxy + TLS auto)     |
 
 ### PostgreSQL en haute disponibilite
 
