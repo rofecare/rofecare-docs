@@ -22,6 +22,72 @@ Ce document presente la decomposition strategique du systeme Rofecare selon les 
 
 ---
 
+## Sous-domaines DNS (*.rofecare.com)
+
+Chaque composant du systeme Rofecare est accessible via un sous-domaine dedie sur `rofecare.com`.
+
+### Applications
+
+| Sous-domaine | Service | Description |
+|---|---|---|
+| `rofecare.com` | Landing page | Site vitrine et page d'accueil |
+| `app.rofecare.com` | Frontend Nuxt | Application web principale (SPA/SSR) |
+| `api.rofecare.com` | API Gateway (8080) | Point d'entree unique pour toutes les API REST |
+| `docs.rofecare.com` | Documentation | Documentation technique (GitHub Pages ou similaire) |
+
+### Services metier (internes, via API Gateway)
+
+Ces sous-domaines pointent vers le Gateway qui route vers le service correspondant.
+
+| Sous-domaine | Route Gateway | Service | Port interne |
+|---|---|---|---|
+| `api.rofecare.com/identity` | `/api/identity/**` | Identity | 8081 |
+| `api.rofecare.com/patients` | `/api/patients/**` | Patient | 8082 |
+| `api.rofecare.com/clinical` | `/api/clinical/**` | Clinical | 8083 |
+| `api.rofecare.com/medical-technology` | `/api/medical-technology/**` | Medical Technology | 8084 |
+| `api.rofecare.com/pharmacy` | `/api/pharmacy/**` | Pharmacy | 8085 |
+| `api.rofecare.com/finance` | `/api/finance/**` | Finance | 8086 |
+| `api.rofecare.com/platform` | `/api/platform/**` | Platform | 8087 |
+| `api.rofecare.com/interoperability` | `/api/interoperability/**` | Interoperability | 8088 |
+
+### Infrastructure et monitoring
+
+| Sous-domaine | Service | Description |
+|---|---|---|
+| `eureka.rofecare.com` | Discovery Server (8761) | Dashboard Eureka, registre des services |
+| `config.rofecare.com` | Config Server (8888) | Configuration centralisee (acces restreint) |
+| `grafana.rofecare.com` | Grafana (3001) | Dashboards de monitoring et metriques |
+| `kibana.rofecare.com` | Kibana (5601) | Visualisation des logs centralises (ELK) |
+| `zipkin.rofecare.com` | Zipkin (9411) | Tracing distribue des requetes |
+| `kafka-ui.rofecare.com` | Kafka UI (8180) | Visualisation des topics Kafka |
+| `prometheus.rofecare.com` | Prometheus (9090) | Collecte et stockage des metriques |
+
+### Interoperabilite
+
+| Sous-domaine | Service | Description |
+|---|---|---|
+| `fhir.rofecare.com` | Interoperability (8088) | Endpoint FHIR R4 pour les echanges standardises |
+| `hl7.rofecare.com` | Interoperability (8088) | Endpoint HL7 v2 pour les messages de sante |
+
+### Diagramme DNS
+
+```
+                          *.rofecare.com
+                               |
+        +----------+-----------+----------+-----------+
+        |          |           |          |           |
+   rofecare.com  app.       api.       docs.     grafana.
+   (landing)   (frontend) (gateway)  (docs)    (monitoring)
+                               |
+              +------+------+------+------+------+------+------+
+              |      |      |      |      |      |      |      |
+          identity patient clinical medtech pharmacy finance platform interop
+```
+
+> **Note** : En production, seuls `rofecare.com`, `app.rofecare.com`, `api.rofecare.com`, `docs.rofecare.com` et `fhir.rofecare.com` sont exposes publiquement. Les sous-domaines d'infrastructure (`grafana`, `kibana`, `eureka`, etc.) sont accessibles uniquement via VPN ou reseau interne.
+
+---
+
 ## Vue d'ensemble strategique
 
 Le systeme Rofecare est decompose en **8 sous-domaines** qui correspondent chacun a un **Bounded Context** distinct, implemente par un microservice dedie.
