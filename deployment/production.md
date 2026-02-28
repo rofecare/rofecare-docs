@@ -527,7 +527,7 @@ scrape_configs:
 
 #### Dashboards Grafana
 
-Accedez a Grafana sur `http://localhost:3000` (utilisateur : `admin`).
+Accedez a Grafana sur `https://grafana.rofecare.com` (utilisateur : `admin`).
 
 Dashboards recommandes a importer :
 
@@ -604,7 +604,7 @@ management:
       endpoint: http://zipkin:9411/api/v2/spans
 ```
 
-Accedez a l'interface Zipkin : `http://localhost:9411`
+Accedez a l'interface Zipkin : `https://zipkin.rofecare.com`
 
 ---
 
@@ -859,15 +859,17 @@ Chaque service expose les endpoints de sante via Spring Boot Actuator :
 #!/bin/bash
 # health-check.sh - Verification periodique de la sante
 SERVICES=(
-  "API Gateway:http://localhost:8080/actuator/health"
-  "Identity:http://localhost:8081/actuator/health"
-  "Patient:http://localhost:8082/actuator/health"
-  "Clinical:http://localhost:8083/actuator/health"
-  "Med Tech:http://localhost:8084/actuator/health"
-  "Pharmacy:http://localhost:8085/actuator/health"
-  "Finance:http://localhost:8086/actuator/health"
-  "Platform:http://localhost:8087/actuator/health"
-  "Interop:http://localhost:8088/actuator/health"
+  "API Gateway:https://api.rofecare.com/actuator/health"
+  "Identity:https://api.rofecare.com/api/identity/actuator/health"
+  "Patient:https://api.rofecare.com/api/patients/actuator/health"
+  "Clinical:https://api.rofecare.com/api/clinical/actuator/health"
+  "Med Tech:https://api.rofecare.com/api/medical-technology/actuator/health"
+  "Pharmacy:https://api.rofecare.com/api/pharmacy/actuator/health"
+  "Finance:https://api.rofecare.com/api/finance/actuator/health"
+  "Platform:https://api.rofecare.com/api/platform/actuator/health"
+  "Interop:https://api.rofecare.com/api/interoperability/actuator/health"
+  "Eureka:https://eureka.rofecare.com/actuator/health"
+  "Grafana:https://grafana.rofecare.com/api/health"
 )
 
 echo "=== Rofecare Health Check - $(date) ==="

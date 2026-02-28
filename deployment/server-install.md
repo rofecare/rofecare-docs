@@ -315,6 +315,34 @@ sleep 60
 docker compose ps
 ```
 
+### Phase 4 : Caddy (reverse proxy + TLS)
+
+Demarrez Caddy pour exposer les services via les sous-domaines `*.rofecare.com` avec HTTPS automatique :
+
+```bash
+# Demarrer Caddy
+docker compose up -d caddy
+
+# Verifier que Caddy est pret
+curl -s https://api.rofecare.com/actuator/health
+```
+
+> **Note** : Caddy obtient automatiquement les certificats TLS via Let's Encrypt. Assurez-vous que les DNS `*.rofecare.com` pointent vers l'IP du serveur avant de demarrer Caddy.
+
+**Sous-domaines actifs apres cette phase :**
+
+| Sous-domaine | Service |
+|---|---|
+| `api.rofecare.com` | API Gateway → tous les services |
+| `app.rofecare.com` | Frontend Nuxt |
+| `eureka.rofecare.com` | Dashboard Eureka (protege) |
+| `config.rofecare.com` | Config Server (protege) |
+| `grafana.rofecare.com` | Dashboards monitoring (protege) |
+| `kibana.rofecare.com` | Logs centralises (protege) |
+| `zipkin.rofecare.com` | Tracing distribue (protege) |
+| `kafka-ui.rofecare.com` | Topics Kafka (protege) |
+| `prometheus.rofecare.com` | Metriques (protege) |
+
 ---
 
 ## Scripts de demarrage
@@ -360,12 +388,19 @@ docker compose up -d \
 echo "Attente des services (60s)..."
 sleep 60
 
+echo "=== Phase 4 : Caddy (reverse proxy + TLS) ==="
+docker compose up -d caddy
+echo "Attente de Caddy (10s)..."
+sleep 10
+
 echo "=== Verification ==="
 docker compose ps
 echo ""
-echo "Dashboard Eureka : http://localhost:8761"
-echo "API Gateway      : http://localhost:8080"
-echo "Kafka UI         : http://localhost:9000"
+echo "Application      : https://app.rofecare.com"
+echo "API Gateway      : https://api.rofecare.com"
+echo "Dashboard Eureka : https://eureka.rofecare.com"
+echo "Grafana          : https://grafana.rofecare.com"
+echo "Kafka UI         : https://kafka-ui.rofecare.com"
 ```
 
 ### `start-infra.sh` - Infrastructure uniquement
@@ -439,7 +474,7 @@ done
 Accedez au dashboard Eureka pour verifier que tous les services sont enregistres :
 
 ```
-http://localhost:8761
+https://eureka.rofecare.com
 ```
 
 Tous les services metier doivent apparaitre avec le statut **UP**.
@@ -448,9 +483,9 @@ Tous les services metier doivent apparaitre avec le statut **UP**.
 
 ```bash
 # Verifier que le routage fonctionne via le gateway
-curl http://localhost:8080/api/v1/identity/actuator/health
-curl http://localhost:8080/api/v1/patients/actuator/health
-curl http://localhost:8080/api/v1/clinical/actuator/health
+curl https://api.rofecare.com/api/identity/actuator/health
+curl https://api.rofecare.com/api/patients/actuator/health
+curl https://api.rofecare.com/api/clinical/actuator/health
 ```
 
 ---
@@ -459,34 +494,39 @@ curl http://localhost:8080/api/v1/clinical/actuator/health
 
 ### Services Spring Cloud
 
-| Service           | Port interne | Port expose | URL                           |
-| ----------------- | ------------ | ----------- | ----------------------------- |
-| Config Server     | 8888         | 8888        | http://localhost:8888          |
-| Discovery Server  | 8761         | 8761        | http://localhost:8761          |
-| API Gateway       | 8080         | 8080        | http://localhost:8080          |
+| Service           | Port interne | Sous-domaine                    |
+| ----------------- | ------------ | ------------------------------- |
+| Config Server     | 8888         | https://config.rofecare.com     |
+| Discovery Server  | 8761         | https://eureka.rofecare.com     |
+| API Gateway       | 8080         | https://api.rofecare.com        |
 
-### Services metier
+### Services metier (accessibles via API Gateway)
 
-| Service                     | Port interne | Port expose |
-| --------------------------- | ------------ | ----------- |
-| Identity Service            | 8081         | 8081        |
-| Patient Service             | 8082         | 8082        |
-| Clinical Service            | 8083         | 8083        |
-| Medical Technology Service  | 8084         | 8084        |
-| Pharmacy Service            | 8085         | 8085        |
-| Finance Service             | 8086         | 8086        |
-| Platform Service            | 8087         | 8087        |
-| Interoperability Service    | 8088         | 8088        |
+| Service                     | Port interne | Route via api.rofecare.com          |
+| --------------------------- | ------------ | ----------------------------------- |
+| Identity Service            | 8081         | `https://api.rofecare.com/api/identity/**` |
+| Patient Service             | 8082         | `https://api.rofecare.com/api/patients/**` |
+| Clinical Service            | 8083         | `https://api.rofecare.com/api/clinical/**` |
+| Medical Technology Service  | 8084         | `https://api.rofecare.com/api/medical-technology/**` |
+| Pharmacy Service            | 8085         | `https://api.rofecare.com/api/pharmacy/**` |
+| Finance Service             | 8086         | `https://api.rofecare.com/api/finance/**` |
+| Platform Service            | 8087         | `https://api.rofecare.com/api/platform/**` |
+| Interoperability Service    | 8088         | `https://api.rofecare.com/api/interoperability/**` |
+
+> **Note** : Les ports internes (8081-8088) ne sont pas exposes en production. Tous les appels passent par `api.rofecare.com` (Caddy → API Gateway → Service).
 
 ### Infrastructure
 
-| Service      | Port interne | Port expose | Usage                    |
-| ------------ | ------------ | ----------- | ------------------------ |
-| PostgreSQL   | 5432         | 5433-5440   | Bases de donnees         |
-| Redis        | 6379         | 6379        | Cache                    |
-| Zookeeper    | 2181         | 2181        | Coordination Kafka       |
-| Kafka        | 29092        | 9092        | Bus de messages          |
-| Kafka UI     | 8080         | 9000        | Interface administration |
+| Service      | Port interne | Sous-domaine / Acces              |
+| ------------ | ------------ | --------------------------------- |
+| PostgreSQL   | 5432         | Interne uniquement (pas expose)   |
+| Redis        | 6379         | Interne uniquement (pas expose)   |
+| Kafka        | 9092         | Interne uniquement (pas expose)   |
+| Kafka UI     | 8180         | https://kafka-ui.rofecare.com     |
+| Prometheus   | 9090         | https://prometheus.rofecare.com   |
+| Grafana      | 3001         | https://grafana.rofecare.com      |
+| Kibana       | 5601         | https://kibana.rofecare.com       |
+| Zipkin       | 9411         | https://zipkin.rofecare.com       |
 
 ---
 
