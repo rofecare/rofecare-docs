@@ -60,17 +60,17 @@ Le mode monolithe regroupe tous les modules metier dans un seul artefact executa
 
 ### Obtenir le JAR
 
-Telechargez la derniere version depuis la page [GitHub Releases](https://github.com/your-org/rofecare-server/releases) :
+Telechargez la derniere version depuis la page [GitHub Releases](https://github.com/rofecare/rofecare-server/releases) :
 
 ```bash
 # Telecharger la derniere release
-wget https://github.com/your-org/rofecare-server/releases/latest/download/rofecare-server.jar
+wget https://github.com/rofecare/rofecare-server/releases/latest/download/rofecare-server.jar
 ```
 
 Ou compilez depuis les sources :
 
 ```bash
-git clone https://github.com/your-org/rofecare-server.git
+git clone https://github.com/rofecare/rofecare-server.git
 cd rofecare-server
 
 # Compiler le module commun d'abord
@@ -356,7 +356,7 @@ Dans l'application, accedez a **Parametres > Synchronisation** ou ajoutez au fic
 rofecare:
   sync:
     enabled: true
-    cloud-url: https://cloud.rofecare.example.com
+    cloud-url: https://cloud.rofecare.com
     facility-id: HOSP-001
     api-key: votre_cle_api_synchronisation
     interval: 300  # Intervalle en secondes (5 minutes)
@@ -462,7 +462,7 @@ curl http://localhost:8080/actuator/metrics/jvm.memory.used
 
 ```bash
 # Verifier la connectivite avec le serveur cloud
-curl -I https://cloud.rofecare.example.com/actuator/health
+curl -I https://cloud.rofecare.com/actuator/health
 
 # Forcer une resynchronisation
 curl -X POST http://localhost:8080/api/v1/sync/force \

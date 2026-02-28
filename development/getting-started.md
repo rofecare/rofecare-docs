@@ -70,14 +70,14 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21"
 
 ```bash
 # Cloner le backend
-git clone https://github.com/your-org/rofecare-server.git
+git clone https://github.com/rofecare/rofecare-server.git
 cd rofecare-server
 
 # Se placer sur la branche develop
 git checkout develop
 
 # Cloner le frontend (optionnel)
-git clone https://github.com/your-org/rofecare-frontend.git
+git clone https://github.com/rofecare/rofecare-frontend.git
 ```
 
 ---

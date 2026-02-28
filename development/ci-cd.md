@@ -447,20 +447,20 @@ Les images Docker sont taguees automatiquement lors du push vers GHCR :
 
 ```bash
 # Derniere version stable
-docker pull ghcr.io/your-org/rofecare-server/patient-service:latest
+docker pull ghcr.io/rofecare/rofecare-server/patient-service:latest
 
 # Version specifique
-docker pull ghcr.io/your-org/rofecare-server/patient-service:1.2.0
+docker pull ghcr.io/rofecare/rofecare-server/patient-service:1.2.0
 
 # Commit specifique
-docker pull ghcr.io/your-org/rofecare-server/patient-service:a1b2c3d
+docker pull ghcr.io/rofecare/rofecare-server/patient-service:a1b2c3d
 ```
 
 ### Configuration dans `docker-compose.prod.yml`
 
 ```yaml
 patient-service:
-  image: ghcr.io/your-org/rofecare-server/patient-service:${VERSION:-latest}
+  image: ghcr.io/rofecare/rofecare-server/patient-service:${VERSION:-latest}
 ```
 
 ---
@@ -476,7 +476,7 @@ Pour publier et consommer les artefacts Maven via GitHub Packages, configurez le
     <repository>
         <id>github</id>
         <name>GitHub Packages</name>
-        <url>https://maven.pkg.github.com/your-org/rofecare-server</url>
+        <url>https://maven.pkg.github.com/rofecare/rofecare-server</url>
     </repository>
 </distributionManagement>
 ```
@@ -502,18 +502,18 @@ Ajoutez dans `~/.m2/settings.xml` :
 Les images sont publiees dans GitHub Container Registry (GHCR) :
 
 ```
-ghcr.io/your-org/rofecare-server/identity-service
-ghcr.io/your-org/rofecare-server/patient-service
-ghcr.io/your-org/rofecare-server/clinical-service
-ghcr.io/your-org/rofecare-server/medical-technology-service
-ghcr.io/your-org/rofecare-server/pharmacy-service
-ghcr.io/your-org/rofecare-server/finance-service
-ghcr.io/your-org/rofecare-server/platform-service
-ghcr.io/your-org/rofecare-server/interoperability-service
-ghcr.io/your-org/rofecare-server/config-server
-ghcr.io/your-org/rofecare-server/discovery-server
-ghcr.io/your-org/rofecare-server/gateway
-ghcr.io/your-org/rofecare-server/rofecare-server
+ghcr.io/rofecare/rofecare-server/identity-service
+ghcr.io/rofecare/rofecare-server/patient-service
+ghcr.io/rofecare/rofecare-server/clinical-service
+ghcr.io/rofecare/rofecare-server/medical-technology-service
+ghcr.io/rofecare/rofecare-server/pharmacy-service
+ghcr.io/rofecare/rofecare-server/finance-service
+ghcr.io/rofecare/rofecare-server/platform-service
+ghcr.io/rofecare/rofecare-server/interoperability-service
+ghcr.io/rofecare/rofecare-server/config-server
+ghcr.io/rofecare/rofecare-server/discovery-server
+ghcr.io/rofecare/rofecare-server/gateway
+ghcr.io/rofecare/rofecare-server/rofecare-server
 ```
 
 ---
@@ -565,7 +565,7 @@ updates:
       day: "monday"
     open-pull-requests-limit: 10
     reviewers:
-      - "your-org/backend-team"
+      - "rofecare/backend-team"
     labels:
       - "dependencies"
       - "java"

@@ -58,10 +58,10 @@ mvn -version              # Apache Maven 3.9.x
 mkdir -p /opt/rofecare && cd /opt/rofecare
 
 # Cloner le backend principal
-git clone https://github.com/your-org/rofecare-server.git
+git clone https://github.com/rofecare/rofecare-server.git
 
 # Cloner le frontend (optionnel, si deploiement integre)
-git clone https://github.com/your-org/rofecare-frontend.git
+git clone https://github.com/rofecare/rofecare-frontend.git
 ```
 
 ---
@@ -161,7 +161,7 @@ ZOOKEEPER_PORT=2181
 # SPRING CLOUD
 # ============================================================
 CONFIG_SERVER_PORT=8888
-CONFIG_SERVER_GIT_URI=https://github.com/your-org/rofecare-config.git
+CONFIG_SERVER_GIT_URI=https://github.com/rofecare/rofecare-config.git
 
 DISCOVERY_SERVER_PORT=8761
 DISCOVERY_SERVER_HOST=discovery-server
