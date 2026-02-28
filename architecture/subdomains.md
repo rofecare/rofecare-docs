@@ -50,17 +50,21 @@ Ces sous-domaines pointent vers le Gateway qui route vers le service corresponda
 | `api.rofecare.com/platform` | `/api/platform/**` | Platform | 8087 |
 | `api.rofecare.com/interoperability` | `/api/interoperability/**` | Interoperability | 8088 |
 
-### Infrastructure et monitoring
+### Infrastructure et monitoring (acces protege)
 
-| Sous-domaine | Service | Description |
-|---|---|---|
-| `eureka.rofecare.com` | Discovery Server (8761) | Dashboard Eureka, registre des services |
-| `config.rofecare.com` | Config Server (8888) | Configuration centralisee (acces restreint) |
-| `grafana.rofecare.com` | Grafana (3001) | Dashboards de monitoring et metriques |
-| `kibana.rofecare.com` | Kibana (5601) | Visualisation des logs centralises (ELK) |
-| `zipkin.rofecare.com` | Zipkin (9411) | Tracing distribue des requetes |
-| `kafka-ui.rofecare.com` | Kafka UI (8180) | Visualisation des topics Kafka |
-| `prometheus.rofecare.com` | Prometheus (9090) | Collecte et stockage des metriques |
+Tous les sous-domaines d'infrastructure sont proteges par **basic auth** (login/mot de passe) via Caddy. Seuls les administrateurs systeme y ont acces.
+
+| Sous-domaine | Service | Auth | Description |
+|---|---|---|---|
+| `eureka.rofecare.com` | Discovery Server (8761) | basicauth | Dashboard Eureka, registre des services |
+| `config.rofecare.com` | Config Server (8888) | basicauth | Configuration centralisee |
+| `grafana.rofecare.com` | Grafana (3001) | basicauth + login Grafana | Dashboards de monitoring et metriques |
+| `kibana.rofecare.com` | Kibana (5601) | basicauth + login Elastic | Visualisation des logs centralises (ELK) |
+| `zipkin.rofecare.com` | Zipkin (9411) | basicauth | Tracing distribue des requetes |
+| `kafka-ui.rofecare.com` | Kafka UI (8180) | basicauth | Visualisation des topics Kafka |
+| `prometheus.rofecare.com` | Prometheus (9090) | basicauth | Collecte et stockage des metriques |
+
+> **Securite** : En production, ces sous-domaines devraient etre accessibles uniquement via VPN en complement du basic auth. Voir [production.md](../deployment/production.md) pour la configuration Caddy.
 
 ### Interoperabilite
 

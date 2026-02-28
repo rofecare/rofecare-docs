@@ -263,25 +263,78 @@ app.rofecare.com {
     reverse_proxy localhost:3000
 }
 
-# Monitoring (acces restreint)
+# ============================================================
+# Infrastructure & Monitoring (acces restreint via basicauth)
+# ============================================================
+# Generer le hash du mot de passe :
+#   caddy hash-password --plaintext 'VotreMotDePasse'
+#
+# Toutes ces interfaces sont protegees par login/mot de passe.
+# Seuls les administrateurs systeme doivent y avoir acces.
+# ============================================================
+
+(infra_auth) {
+    basicauth {
+        {$CADDY_ADMIN_USER:admin} {$CADDY_ADMIN_PASSWORD_HASH}
+    }
+}
+
 grafana.rofecare.com {
+    import infra_auth
     reverse_proxy localhost:3001
 }
 
 kibana.rofecare.com {
+    import infra_auth
     reverse_proxy localhost:5601
 }
 
 eureka.rofecare.com {
+    import infra_auth
     reverse_proxy localhost:8761
 }
 
 zipkin.rofecare.com {
+    import infra_auth
     reverse_proxy localhost:9411
+}
+
+kafka-ui.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:8180
+}
+
+prometheus.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:9090
+}
+
+config.rofecare.com {
+    import infra_auth
+    reverse_proxy localhost:8888
 }
 ```
 
 > **Note** : Caddy obtient et renouvelle automatiquement les certificats TLS. Aucune configuration SSL manuelle n'est necessaire. La redirection HTTP → HTTPS est egalement automatique.
+
+#### Configurer l'authentification infrastructure
+
+1. Generer le hash du mot de passe admin :
+
+```bash
+caddy hash-password --plaintext 'VotreMotDePasseSecurise'
+# Sortie : $2a$14$... (hash bcrypt)
+```
+
+2. Definir les variables d'environnement pour Caddy :
+
+```bash
+# .env
+CADDY_ADMIN_USER=admin
+CADDY_ADMIN_PASSWORD_HASH=$2a$14$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+> **Securite** : Les sous-domaines d'infrastructure (`eureka`, `config`, `grafana`, `kibana`, `zipkin`, `kafka-ui`, `prometheus`) sont tous proteges par basic auth. En production, il est recommande de les rendre accessibles uniquement via VPN en complement.
 
 #### Docker Compose pour Caddy
 
