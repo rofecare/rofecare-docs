@@ -160,17 +160,25 @@ services:
 | Type de service          | CPU (limites) | RAM (limites) | RAM (reserves) |
 | ------------------------ | ------------- | ------------- | -------------- |
 | Spring Cloud (Config, Discovery) | 0.5 CPU | 512 MB     | 256 MB         |
-| API Gateway              | 1.0 CPU       | 1 GB          | 512 MB         |
-| Services metier          | 1.0 CPU       | 1 GB          | 512 MB         |
-| Clinical Service         | 1.5 CPU       | 1.5 GB        | 768 MB         |
-| PostgreSQL (par instance)| 0.5-1.0 CPU   | 512 MB - 1 GB | 256 MB         |
-| Redis                    | 0.5 CPU       | 512 MB        | 128 MB         |
-| Kafka                    | 1.0 CPU       | 2 GB          | 1 GB           |
-| Zookeeper                | 0.5 CPU       | 512 MB        | 256 MB         |
+| API Gateway              | 1.0 CPU       | 768 MB        | 384 MB         |
+| Services metier          | 1.0 CPU       | 512 MB        | 256 MB         |
+| Clinical Service         | 1.0 CPU       | 768 MB        | 384 MB         |
+| Redis                    | 0.5 CPU       | 256 MB        | 128 MB         |
+| Kafka (KRaft, sans Zookeeper) | 1.0 CPU  | 1 GB          | 512 MB         |
 
-### Estimation totale
+> **JVM tuning** : Chaque service Spring Boot doit etre lance avec des limites JVM explicites pour reduire la consommation memoire.
 
-Pour un deploiement complet avec monitoring :
+```yaml
+# docker-compose.prod.yml - Exemple pour un service metier
+environment:
+  JAVA_OPTS: "-Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+```
+
+### Profils de deploiement
+
+#### Profil complet — auto-heberge (tout inclus)
+
+Pour un deploiement avec PostgreSQL local et monitoring complet :
 
 | Composants                      | RAM estimee |
 | ------------------------------- | ----------- |
@@ -180,6 +188,95 @@ Pour un deploiement complet avec monitoring :
 | Redis + Kafka + Zookeeper       | ~3 GB       |
 | Monitoring (Prometheus, Grafana) | ~2 GB      |
 | **Total**                       | **~22 GB**  |
+
+#### Profil optimise — base de donnees managee (recommande)
+
+Utilise un cluster PostgreSQL manage (DigitalOcean, AWS RDS, Supabase, Neon, etc.) au lieu de 8 instances locales. Kafka en mode KRaft (sans Zookeeper).
+
+| Composants                      | RAM estimee |
+| ------------------------------- | ----------- |
+| PostgreSQL manage (distant)     | **0 GB**    |
+| 8 services metier (JVM optimisee) | ~4 GB     |
+| 3 services Spring Cloud         | ~1.5 GB    |
+| Redis                           | ~256 MB    |
+| Kafka KRaft (sans Zookeeper)    | ~1 GB      |
+| Monitoring leger (Prometheus + Grafana) | ~1 GB |
+| Caddy                           | ~50 MB     |
+| **Total**                       | **~8 GB**  |
+
+> **Economie** : Le profil optimise consomme **~8 GB** au lieu de ~22 GB, soit une reduction de **64%**.
+
+#### Configuration pour base de donnees managee
+
+Avec un cluster PostgreSQL manage (exemple : DigitalOcean Managed Database), chaque service pointe vers la meme instance avec des **bases separees** :
+
+```yaml
+# .env - Configuration pour PostgreSQL manage (DigitalOcean)
+DB_HOST=db-postgresql-rofecare-do-user-xxxxx.ondigitalocean.com
+DB_PORT=25060
+DB_SSL_MODE=require
+
+# Chaque service a sa propre base de donnees sur le meme cluster
+IDENTITY_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_identity?sslmode=require
+PATIENT_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_patient?sslmode=require
+CLINICAL_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_clinical?sslmode=require
+MEDTECH_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_medical_technology?sslmode=require
+PHARMACY_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_pharmacy?sslmode=require
+FINANCE_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_finance?sslmode=require
+PLATFORM_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_platform?sslmode=require
+INTEROP_DB_URL=jdbc:postgresql://${DB_HOST}:${DB_PORT}/rofecare_interoperability?sslmode=require
+```
+
+```yaml
+# docker-compose.prod.yml - Services sans PostgreSQL local
+# Supprimer toutes les sections postgresql-* du docker-compose
+# Chaque service utilise les variables DB_URL depuis le .env
+
+services:
+  rofecare-service-identity:
+    environment:
+      SPRING_DATASOURCE_URL: ${IDENTITY_DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQLDialect
+      JAVA_OPTS: "-Xms128m -Xmx384m -XX:+UseG1GC"
+    # ... idem pour les 7 autres services
+```
+
+#### Kafka KRaft (sans Zookeeper)
+
+Kafka 3.5+ supporte le mode **KRaft** qui elimine la dependance a Zookeeper (~512 MB economises) :
+
+```yaml
+# docker-compose.prod.yml - Kafka en mode KRaft
+kafka:
+  image: confluentinc/cp-kafka:7.6.0
+  environment:
+    KAFKA_NODE_ID: 1
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    CLUSTER_ID: "rofecare-kafka-cluster-001"
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+  # Plus besoin de Zookeeper !
+```
+
+#### Choix du provider PostgreSQL manage
+
+| Provider | Plan recommande | Prix estimatif | Avantages |
+|---|---|---|---|
+| **DigitalOcean** | Managed DB — Basic (1 GB RAM, 10 GB) | ~15 $/mois | Simple, backups auto, scaling |
+| **Supabase** | Pro | ~25 $/mois | Postgres + Auth + API REST gratuit |
+| **Neon** | Scale | ~19 $/mois | Serverless, branching, scale-to-zero |
+| **AWS RDS** | db.t4g.micro | ~15 $/mois | Fiable, multi-AZ disponible |
+| **Railway** | Pro | ~20 $/mois | Deploy facile, integration Git |
+
+> **Recommandation** : Pour demarrer, **DigitalOcean Managed Database** offre le meilleur rapport qualite/prix avec backups automatiques, scaling vertical, et connection pools integres.
 
 ---
 

@@ -22,12 +22,14 @@ Guide de deploiement de Rofecare HIS en architecture microservices, concu pour l
 
 ### Materiel
 
-| Ressource | Minimum   | Recommande |
-| --------- | --------- | ---------- |
-| RAM       | 16 GB     | 32 GB      |
-| CPU       | 4 coeurs  | 8 coeurs   |
-| Disque    | 50 GB SSD | 200 GB SSD |
-| Reseau    | 100 Mbps  | 1 Gbps     |
+| Ressource | Auto-heberge (tout inclus) | Optimise (DB managee) |
+| --------- | -------------------------- | --------------------- |
+| RAM       | 16-22 GB                   | **8 GB**              |
+| CPU       | 8 coeurs                   | 4 coeurs              |
+| Disque    | 200 GB SSD                 | 50 GB SSD             |
+| Reseau    | 100 Mbps                   | 100 Mbps              |
+
+> **Profil optimise** : En utilisant un PostgreSQL manage (DigitalOcean, Supabase, Neon) et Kafka KRaft (sans Zookeeper), la RAM necessaire passe de ~22 GB a **~8 GB**. Voir [production.md](../deployment/production.md#profils-de-deploiement) pour les details.
 
 ### Logiciels
 
