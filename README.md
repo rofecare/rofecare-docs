@@ -35,8 +35,8 @@ Le systeme se distingue par sa **double strategie de deploiement** : il fonction
 
 ```
                               +---------------------+
-                              |    API Gateway       |
-                              |     (port 8080)      |
+                              |   Caddy (reverse     |
+                              |   proxy, port 443)   |
                               +----------+----------+
                                          |
             +----------------------------+----------------------------+
@@ -52,11 +52,13 @@ Le systeme se distingue par sa **double strategie de deploiement** : il fonction
        +----+----+ +----+----+ +----+----+                           |
             |            |           |                                |
     +-------+------------+-----------+--------------------------------+
-    |                    Apache Kafka (9092)                          |
+    |                Redis Streams (messaging)                        |
     +----------------------------------------------------------------+
-    |              PostgreSQL x8  |  Redis  |  Monitoring             |
+    |     PostgreSQL (DO Managed DB)  |  Redis  |  Monitoring         |
     +----------------------------------------------------------------+
 ```
+
+> Les services tournent nativement en tant qu'unites **systemd** (plus de Docker). Les JVM sont configurees avec `-Xmx200m -Xms128m`.
 
 Pour une vue detaillee, consultez la [documentation d'architecture](architecture/overview.md).
 
@@ -67,11 +69,11 @@ Pour une vue detaillee, consultez la [documentation d'architecture](architecture
 | Couche            | Technologies                                      |
 |-------------------|---------------------------------------------------|
 | Backend           | Java 21, Spring Boot 3.4.1, Spring Cloud 2024.0.0 |
-| Base de donnees   | PostgreSQL 16 (8 instances), Redis 7               |
+| Base de donnees   | PostgreSQL 16 (DigitalOcean Managed DB), Redis 7   |
 | Migrations        | Flyway                                             |
-| Messaging         | Apache Kafka (Confluent 7.6.0)                     |
-| API Gateway       | Spring Cloud Gateway                               |
-| Service Discovery | Eureka                                             |
+| Messaging         | Redis Streams (defaut), Kafka (opt-in)             |
+| Reverse Proxy     | Caddy Server                                       |
+| Service Discovery | Eureka (cloud) / direct (monolithe)                |
 | Configuration     | Spring Cloud Config Server                         |
 | Resilience        | Resilience4j (Circuit Breaker, Retry, Rate Limiter)|
 | Tests             | JUnit 5, Mockito, Testcontainers, AssertJ, ArchUnit|
@@ -89,34 +91,24 @@ Pour une vue detaillee, consultez la [documentation d'architecture](architecture
 
 - Java 21 (JDK)
 - Maven 3.9+
-- Docker & Docker Compose
+- Redis 7+ (pour le messaging et le cache)
 - Node.js 20+ (pour le frontend)
 - Rust (pour l'application desktop Tauri)
+- PostgreSQL 16+ externalise (DigitalOcean Managed Database)
 
-### Lancement en mode microservices
+> **Plus de Docker/docker-compose.** Les services tournent nativement comme unites systemd.
 
-```bash
-# Demarrer l'infrastructure
-docker compose up -d postgres redis kafka zookeeper
+### Lancement en mode microservices (production)
 
-# Demarrer les services d'infrastructure
-./mvnw -pl rofecare-config-server spring-boot:run &
-./mvnw -pl rofecare-discovery-server spring-boot:run &
-./mvnw -pl rofecare-api-gateway spring-boot:run &
+Les services sont deployes via **systemd**. Chaque JVM est configuree avec `-Xmx200m -Xms128m`. Le reverse proxy est assure par **Caddy Server**.
 
-# Demarrer les services metier
-./mvnw -pl rofecare-identity-service spring-boot:run &
-./mvnw -pl rofecare-patient-service spring-boot:run &
-./mvnw -pl rofecare-clinical-service spring-boot:run &
-# ... autres services
-```
+Consultez le depot [`rofecare-infrastructure`](https://github.com/rofecare/rofecare-infrastructure) pour les scripts de deploiement, les fichiers de configuration Caddy et les unites systemd.
 
-### Lancement en mode monolithe
+### Lancement en mode monolithe (developpement local)
 
 ```bash
-docker compose up -d postgres redis
-
-./mvnw -pl rofecare-server spring-boot:run -Dspring.profiles.active=monolith
+java -Xmx200m -Xms128m -jar rofecare-server/target/rofecare-server-0.1.0-SNAPSHOT.jar \
+  --spring.profiles.active=monolith
 ```
 
 Pour des instructions detaillees, consultez le [guide de demarrage](getting-started.md).
@@ -142,7 +134,6 @@ rofecare/
 ├── rofecare-common/                 # Bibliotheque partagee
 ├── rofecare-desktop/                # Application Tauri
 ├── rofecare-docs/                   # Documentation du projet
-├── docker-compose.yml               # Orchestration des services
 └── pom.xml                          # POM parent Maven
 ```
 
@@ -156,8 +147,8 @@ rofecare/
 | [Sous-domaines DDD](architecture/subdomains.md)            | Bounded contexts, aggregats, evenements           |
 | [Deploiement dual](architecture/dual-deployment.md)        | Cloud vs monolithe vs desktop, synchronisation    |
 | [Services metier](services/)                               | Documentation detaillee de chaque microservice    |
-| [Infrastructure](infrastructure/)                          | PostgreSQL, Redis, Kafka, monitoring              |
-| [Deploiement](deployment/)                                 | Docker, CI/CD, environnements                     |
+| [Infrastructure](infrastructure/)                          | PostgreSQL (DO Managed), Redis Streams, monitoring|
+| [Deploiement](../rofecare-infrastructure/README.md)        | systemd, Caddy, CI/CD — voir `rofecare-infrastructure` |
 | [Developpement](development/)                              | Conventions, contribution, tests                  |
 
 ---
